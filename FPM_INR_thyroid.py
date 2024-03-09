@@ -293,8 +293,12 @@ if __name__ == "__main__":
                 raise NotImplementedError
 
         cidxs = torch.LongTensor([0, 1, 2]).to(device)
+        color_spectrum_masks = []
+        color_dfmasks = []
+
         for cidx in cidxs:
             spectrum_masks = []
+            dfmasks = []
             for it in range(ID_len // led_batch_size):  # + 1
                 model.zero_grad()
                 dfmask = torch.exp(
@@ -304,6 +308,11 @@ if __name__ == "__main__":
                         1, kzzs[cidx].shape[1], kzzs[cidx].shape[2]
                     )
                 )
+                tmp = dz[:, None, None].repeat(
+                    1, kzzs[cidx].shape[1], kzzs[cidx].shape[2]
+                )
+                print(tmp)
+                exit()
                 led_num = led_idices[it * led_batch_size : (it + 1) * led_batch_size]
                 dfmask = dfmask.unsqueeze(1).repeat(1, len(led_num), 1, 1)
                 spectrum_mask_ampli = Pupil0s[cidx].repeat(
@@ -317,7 +326,6 @@ if __name__ == "__main__":
                 spectrum_mask = spectrum_mask_ampli * torch.exp(
                     1j * spectrum_mask_phase
                 )
-                spectrum_masks.append(spectrum_mask)
 
                 with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16):
                     img_ampli, img_phase = model_fn(cidx.unsqueeze(0))
@@ -347,9 +355,18 @@ if __name__ == "__main__":
                 psnr = 10 * -torch.log10(mse_loss).item()
                 t.set_postfix(Loss=f"{loss.item():.4e}", PSNR=f"{psnr:.2f}")
                 optimizer.step()
-        spectrum_masks = torch.stack(spectrum_masks)
+                spectrum_masks.append(spectrum_mask)
+                dfmasks.append(dfmask)
+            spectrum_masks = torch.stack(spectrum_masks)
+            dfmasks = torch.stack(dfmasks)
+            color_spectrum_masks.append(spectrum_masks)
+            color_dfmasks.append(dfmasks)
+        color_spectrum_masks = torch.stack(color_spectrum_masks)
+        color_dfmasks = torch.stack(color_dfmasks)
+
         d = {
-            "spectrum_mask": spectrum_masks,
+            "spectrum_mask": color_spectrum_masks,
+            "df_mask": color_dfmasks,
             "Isum": Isums,
             "Pupil0": Pupil0s,
             "kzz": kzzs,
