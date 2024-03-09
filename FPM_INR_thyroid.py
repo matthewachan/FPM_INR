@@ -1,7 +1,7 @@
 # Main script for FPM-INR reconstruction
 # Written by Haowen Zhou and Brandon Y. Feng
 # Last modified on 10/26/2023
-# Contact: Haowen Zhou (hzhou7@caltech.edu) 
+# Contact: Haowen Zhou (hzhou7@caltech.edu)
 
 
 import os
@@ -46,8 +46,8 @@ def get_sub_spectrum(img_complex, led_num, x_0, y_0, x_1, y_1, spectrum_mask, ma
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_epochs", default=15, type=int) 
-    parser.add_argument("--lr_decay_step", default=6, type=int) 
+    parser.add_argument("--num_epochs", default=15, type=int)
+    parser.add_argument("--lr_decay_step", default=6, type=int)
     parser.add_argument("--num_feats", default=32, type=int)
     parser.add_argument("--num_modes", default=512, type=int)
     parser.add_argument("--c2f", default=False, action="store_true")
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     parser.add_argument("--amp", default=True, action="store_true")
     parser.add_argument("--sample", default="Thyroid", type=str)
     parser.add_argument("--color", default="g", type=str)
-    parser.add_argument("--is_system", default="Linux", type=str) # "Windows". "Linux"
+    parser.add_argument("--is_system", default="Linux", type=str)  # "Windows". "Linux"
 
     args = parser.parse_args()
 
@@ -68,14 +68,14 @@ if __name__ == "__main__":
     use_c2f = args.c2f
     use_layernorm = args.layer_norm
     use_amp = args.amp
-    
+
     sample = args.sample
     color = args.color
     is_os = args.is_system
-    
+
     sample_list = ["Thyroid"]
-    color_list = ['r', 'g', 'b']
-    if sample not in sample_list: 
+    color_list = ["r", "g", "b"]
+    if sample not in sample_list:
         print("Error message: sample name is wrong.")
         print("Avaliable sample names: ['Thyroid'] ")
     if color not in color_list:
@@ -84,43 +84,47 @@ if __name__ == "__main__":
 
     vis_dir = f"./vis/feat{num_feats}"
 
-    
     if fit_3D:
         vis_dir += "_3D"
         os.makedirs(f"{vis_dir}/vid", exist_ok=True)
     os.makedirs(vis_dir, exist_ok=True)
 
     # Load data
-    I = sio.loadmat(os.path.join('data','Thyroid','Thyroid_'+color+'_1024.mat'))['I'].astype('float32') / 255
+    I = (
+        sio.loadmat(os.path.join("data", "Thyroid", "Thyroid_" + color + "_1024.mat"))[
+            "I"
+        ].astype("float32")
+        / 255
+    )
 
     # Raw data central frame preview
     plt.figure(dpi=200)
-    plt.imshow(I[:, :, 113], cmap='gray')
-    plt.title('Raw data central frame preview')
-    plt.savefig(f'{vis_dir}/raw_data.png')
-    
+    plt.imshow(I[:, :, 113], cmap="gray")
+    plt.title("Raw data central frame preview")
+    plt.savefig(f"{vis_dir}/raw_data.png")
+
     # Select ROI
     # I = I[0:512,0:512,:]
-    
+
     # Raw measurement sidelength
     M = I.shape[0]
     N = I.shape[1]
     # number of LEDs along each axis
-    ledM = 15 
-    ledN = 15  
-    
+    ledM = 15
+    ledN = 15
+
     # Distance between two adjacent LEDs (unit: um)
     D_led = 4000
     # Distance from central LED to sample (unit: um)
     h = 66000
     # LED central wavelength
-    if color == 'r':
+    if color == "r":
         wavelength = 0.617  # um
-    elif  color == 'g':
+    elif color == "g":
         wavelength = 0.5226  # um
-    elif color =='b':
-        wavelength = 0.465 # um
-        
+    elif color == "b":
+        wavelength = 0.465  # um
+
     # free-space k-vector
     k0 = 2 * np.pi / wavelength
     # Objective lens magnification
@@ -134,20 +138,15 @@ if __name__ == "__main__":
     # Maximum k-value
     kmax = NA * k0
     # [x,y] image patch center shift with respect to the optical center (unit: pixel)
-    x = 0 # 450 
-    y = 0 # -50
+    x = 0  # 450
+    y = 0  # -50
     # shift in um
     objdx = x * D_pixel
     objdy = y * D_pixel
-    
-    # Check Nyquist Sampling (Not needed here)
-    # Rcam = wavelength / NA * mag / 2 / pixel_size 
-    # RLED = NA * np.sqrt(D_led ** 2 + h ** 2) / D_led
-    # Roverlap = 1 / np.pi * (2 * np.arccos(1 / 2 / RLED) - 1 / RLED * np.sqrt(1 - (1 / 2 / RLED) ** 2))
-    
+
     # Calculate upsampliing ratio
-    MAGimg = 2 
-    # Upsampled pixel count 
+    MAGimg = 2
+    # Upsampled pixel count
     MM = int(M * MAGimg)
     NN = int(N * MAGimg)
 
@@ -162,52 +161,50 @@ if __name__ == "__main__":
     vled = np.arange(0, 2 * lit_cenv + 1) - lit_cenv
     hled = np.arange(0, 2 * lit_cenh + 1) - lit_cenh
     hhled, vvled = np.meshgrid(hled, vled)
-    
+
     # Calculate illumination NA
-    u = (hhled * D_led + objdx) / np.sqrt((hhled * D_led + objdx) ** 2 + (vvled * D_led + objdy) ** 2 + h ** 2)
-    v = (vvled * D_led + objdy) / np.sqrt((hhled * D_led + objdx) ** 2 + (vvled * D_led + objdy) ** 2 + h ** 2)
+    u = (hhled * D_led + objdx) / np.sqrt(
+        (hhled * D_led + objdx) ** 2 + (vvled * D_led + objdy) ** 2 + h**2
+    )
+    v = (vvled * D_led + objdy) / np.sqrt(
+        (hhled * D_led + objdx) ** 2 + (vvled * D_led + objdy) ** 2 + h**2
+    )
     NAillu = np.sqrt(u**2 + v**2)
-    
+
     # Define LEDs to use
-    # IdxUseMask = NAillu <= NA # Synthetic_NA = NA + NA
-    IdxUseMask = np.sqrt((hhled)**2 + (vvled)**2)<=7 # 145 LEDs used
+    IdxUseMask = np.sqrt((hhled) ** 2 + (vvled) ** 2) <= 7  # 145 LEDs used
     ID_len = np.sum(IdxUseMask)
 
     u_use, v_use = np.zeros((ID_len)), np.zeros((ID_len))
     hhled_use, vvled_use = np.zeros((ID_len)), np.zeros((ID_len))
-    I_idx_use = np.zeros((ID_len)).astype('int')
-    Isum = np.zeros((M,N,ID_len))
+    I_idx_use = np.zeros((ID_len)).astype("int")
+    Isum = np.zeros((M, N, ID_len))
     count = 0
     for i in range(ledM):
         for j in range(ledN):
-            if IdxUseMask[i,j] != 0:
-                u_use[count], v_use[count] = u[i,j], v[i,j] 
-                hhled_use[count], vvled_use[count] = hhled[i,j], vvled[i,j]
+            if IdxUseMask[i, j] != 0:
+                u_use[count], v_use[count] = u[i, j], v[i, j]
+                hhled_use[count], vvled_use[count] = hhled[i, j], vvled[i, j]
                 I_idx_use[count] = int(j + i * ledN)
                 count += 1
-    Isum = I[:,:,I_idx_use]
-    
+    Isum = I[:, :, I_idx_use]
+
     # NA shift in pixel from different LED illuminations
     ledpos_true = np.zeros((ID_len, 2), dtype=int)
     count = 0
     for idx in range(ID_len):
-        Fx1_temp = np.abs(Fxx1 - k0*u_use[idx])
-        ledpos_true[count,0] = np.argmin(Fx1_temp)
-        Fy1_temp = np.abs(Fyy1 - k0*v_use[idx])
-        ledpos_true[count,1] = np.argmin(Fy1_temp)
+        Fx1_temp = np.abs(Fxx1 - k0 * u_use[idx])
+        ledpos_true[count, 0] = np.argmin(Fx1_temp)
+        Fy1_temp = np.abs(Fyy1 - k0 * v_use[idx])
+        ledpos_true[count, 1] = np.argmin(Fy1_temp)
         count += 1
-
-    # Raw measurements
-    # Isum = I[:, :, order] / np.max(I)
 
     # Define angular spectrum
     kxx, kyy = np.meshgrid(Fxx1[:M], Fxx1[:N])
     kxx, kyy = kxx - np.mean(kxx), kyy - np.mean(kyy)
     krr = np.sqrt(kxx**2 + kyy**2)
     mask_k = k0**2 - krr**2 > 0
-    kzz_ampli = mask_k * np.abs(
-        np.sqrt((k0**2 - krr.astype("complex64") ** 2))
-    )  
+    kzz_ampli = mask_k * np.abs(np.sqrt((k0**2 - krr.astype("complex64") ** 2)))
     kzz_phase = np.angle(np.sqrt((k0**2 - krr.astype("complex64") ** 2)))
     kzz = kzz_ampli * np.exp(1j * kzz_phase)
 
@@ -227,25 +224,22 @@ if __name__ == "__main__":
 
     # Define depth of field of brightfield microscope for determine selected z-plane
     DOF = (
-        0.5 / NA**2 #+ pixel_size / mag / NA
+        0.5 / NA**2  # + pixel_size / mag / NA
     )  # wavelength is emphrically set as 0.5 um
     # z-slice separation (emphirically set)
     delta_z = 1.6 * DOF
     # z-range
     z_max = 20.0
     z_min = -10.0
-    # number of selected z-slices
+    # number of selected z-slices (should be 6)
     num_z = int(np.ceil((z_max - z_min) / delta_z))
-    
 
     # Define LED Batch size
     led_batch_size = 1
     cur_ds = 1
     if use_c2f:
         c2f_sche = (
-            [4] * (num_epochs // 5)
-            + [2] * (num_epochs // 5)
-            + [1] * (num_epochs // 5)
+            [4] * (num_epochs // 5) + [2] * (num_epochs // 5) + [1] * (num_epochs // 5)
         )
         cur_ds = c2f_sche[0]
 
@@ -297,7 +291,6 @@ if __name__ == "__main__":
             else:
                 raise NotImplementedError
 
-
         for dz in dzs:
             dz = dz.unsqueeze(0)
 
@@ -347,11 +340,14 @@ if __name__ == "__main__":
                 optimizer.step()
 
         scheduler.step()
-        
 
-        if (epoch+1) % 10 == 0 or ( epoch % 2 == 0 and epoch < 20) or epoch == num_epochs:
+        if (
+            (epoch + 1) % 10 == 0
+            or (epoch % 2 == 0 and epoch < 20)
+            or epoch == num_epochs
+        ):
 
-            amplitude = (img_ampli[0].float()).cpu().detach().numpy() 
+            amplitude = (img_ampli[0].float()).cpu().detach().numpy()
             phase = (img_phase[0].float()).cpu().detach().numpy()
 
             fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(20, 10))
@@ -363,7 +359,7 @@ if __name__ == "__main__":
             cax = divider.append_axes("right", size="5%", pad=0.05)
             fig.colorbar(im, cax=cax, orientation="vertical")
 
-            im = axs[1].imshow(phase , cmap="gray") # - phase.mean()
+            im = axs[1].imshow(phase, cmap="gray")  # - phase.mean()
             axs[1].axis("image")
             axs[1].set_title("Reconstructed phase")
             divider = make_axes_locatable(axs[1])
@@ -388,5 +384,5 @@ if __name__ == "__main__":
                 f"{vis_dir}/vid/{epoch}.mp4", np.uint8(imgs * 255), fps=5, quality=8
             )
 
-    save_path = os.path.join('trained_models', sample +'_'+ color + '.pth')
+    save_path = os.path.join("trained_models", sample + "_" + color + ".pth")
     save_model_with_required_grad(model, save_path)
