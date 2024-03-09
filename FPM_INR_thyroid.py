@@ -144,11 +144,14 @@ if __name__ == "__main__":
     objdx = x * D_pixel
     objdy = y * D_pixel
 
+<<<<<<< HEAD
     # Check Nyquist Sampling (Not needed here)
     # Rcam = wavelength / NA * mag / 2 / pixel_size
     # RLED = NA * np.sqrt(D_led ** 2 + h ** 2) / D_led
     # Roverlap = 1 / np.pi * (2 * np.arccos(1 / 2 / RLED) - 1 / RLED * np.sqrt(1 - (1 / 2 / RLED) ** 2))
 
+=======
+>>>>>>> cd44229 (Remove comments)
     # Calculate upsampliing ratio
     MAGimg = 2
     # Upsampled pixel count
@@ -177,7 +180,10 @@ if __name__ == "__main__":
     NAillu = np.sqrt(u**2 + v**2)
 
     # Define LEDs to use
+<<<<<<< HEAD
     # IdxUseMask = NAillu <= NA # Synthetic_NA = NA + NA
+=======
+>>>>>>> cd44229 (Remove comments)
     IdxUseMask = np.sqrt((hhled) ** 2 + (vvled) ** 2) <= 7  # 145 LEDs used
     ID_len = np.sum(IdxUseMask)
 
@@ -205,9 +211,6 @@ if __name__ == "__main__":
         ledpos_true[count, 1] = np.argmin(Fy1_temp)
         count += 1
 
-    # Raw measurements
-    # Isum = I[:, :, order] / np.max(I)
-
     # Define angular spectrum
     kxx, kyy = np.meshgrid(Fxx1[:M], Fxx1[:N])
     kxx, kyy = kxx - np.mean(kxx), kyy - np.mean(kyy)
@@ -232,6 +235,7 @@ if __name__ == "__main__":
     Isum = torch.from_numpy(Isum).to(device)
 
     # Define depth of field of brightfield microscope for determine selected z-plane
+<<<<<<< HEAD
     # DOF = (
     #     0.5 / NA**2  # + pixel_size / mag / NA
     # )  # wavelength is emphrically set as 0.5 um
@@ -246,6 +250,18 @@ if __name__ == "__main__":
     # bgr planes
     z_min = 0.0
     z_max = 2.0
+=======
+    DOF = (
+        0.5 / NA**2  # + pixel_size / mag / NA
+    )  # wavelength is emphrically set as 0.5 um
+    # z-slice separation (emphirically set)
+    delta_z = 1.6 * DOF
+    # z-range
+    z_max = 20.0
+    z_min = -10.0
+    # number of selected z-slices (should be 6)
+    num_z = int(np.ceil((z_max - z_min) / delta_z))
+>>>>>>> cd44229 (Remove comments)
 
     # Define LED Batch size
     led_batch_size = 1
