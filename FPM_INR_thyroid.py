@@ -323,6 +323,8 @@ if __name__ == "__main__":
         for dz in dzs:
             dz = dz.unsqueeze(0)
 
+            spectrum_masks = []
+            df_masks = []
             for it in range(ID_len // led_batch_size):  # + 1
                 model.zero_grad()
                 dfmask = torch.exp(
@@ -367,6 +369,22 @@ if __name__ == "__main__":
                 psnr = 10 * -torch.log10(mse_loss).item()
                 t.set_postfix(Loss=f"{loss.item():.4e}", PSNR=f"{psnr:.2f}")
                 optimizer.step()
+
+                df_masks.append(dfmask)
+                spectrum_masks.append(spectrum_mask)
+            spectrum_masks = torch.stack(spectrum_masks)
+            df_masks = torch.stack(df_masks)
+
+            d = {
+                "spectrum_mask": spectrum_masks,
+                "df_mask": df_masks,
+                "Isum": Isum,
+                "Pupil0": Pupil0,
+                "kzz": kzz,
+                "ledpos_true": ledpos_true,
+            }
+            torch.save(d, f"{color}.pth")
+            exit()
 
         scheduler.step()
 
