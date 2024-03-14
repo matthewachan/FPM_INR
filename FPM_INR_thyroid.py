@@ -37,6 +37,7 @@ def get_sub_spectrum(img_complex, led_num, x_0, y_0, x_1, y_1, spectrum_mask, ma
     O_sub = torch.stack(
         [O[:, x_0[i] : x_1[i], y_0[i] : y_1[i]] for i in range(len(led_num))], dim=1
     )
+
     O_sub = O_sub * spectrum_mask
     o_sub = torch.fft.ifft2(torch.fft.ifftshift(O_sub))
     oI_sub = torch.abs(o_sub)
@@ -106,6 +107,7 @@ if __name__ == "__main__":
         plt.imshow(I[:, :, 113], cmap="gray")
         plt.title("Raw data central frame preview")
         plt.savefig(f"{vis_dir}/raw_data.png")
+        plt.clf()
 
         # Select ROI
         # I = I[0:512,0:512,:]
@@ -167,7 +169,6 @@ if __name__ == "__main__":
             (hhled * D_led + objdx) ** 2 + (vvled * D_led + objdy) ** 2 + h**2
         )
         NAillu = np.sqrt(u**2 + v**2)
-
         # Define LEDs to use
         IdxUseMask = np.sqrt((hhled) ** 2 + (vvled) ** 2) <= 7  # 145 LEDs used
         ID_len = np.sum(IdxUseMask)
@@ -274,10 +275,17 @@ if __name__ == "__main__":
         optimizer, step_size=lr_decay_step, gamma=0.1
     )
 
+    led_idices = np.arange(ID_len)
+    # Note we discard 2 LED measurements here to keep a uniform shape
+    r_idx = led_idices[:-2:3]
+    g_idx = led_idices[1:-1:3]
+    b_idx = led_idices[2::3]
+    led_idices = np.stack([r_idx, g_idx, b_idx], axis=0)
+
     t = tqdm.trange(num_epochs)
     for epoch in t:
-        led_idices = list(np.arange(ID_len))
-        dzs = torch.FloatTensor([5.0]).to(device)
+        # led_idices = list(np.arange(ID_len))
+        dzs = torch.FloatTensor([0.0]).to(device)
         dz = dzs.clone()
         if use_c2f and c2f_sche[epoch] < model.ds_factor:
             model.init_scale_grids(ds_factor=c2f_sche[epoch])
@@ -299,7 +307,8 @@ if __name__ == "__main__":
         for cidx in cidxs:
             spectrum_masks = []
             dfmasks = []
-            for it in range(ID_len // led_batch_size):  # + 1
+            # for it in range(ID_len // led_batch_size):  # + 1
+            for it in range(len(led_idices[cidx]) // led_batch_size):
                 model.zero_grad()
                 dfmask = torch.exp(
                     1j
@@ -308,12 +317,9 @@ if __name__ == "__main__":
                         1, kzzs[cidx].shape[1], kzzs[cidx].shape[2]
                     )
                 )
-                tmp = dz[:, None, None].repeat(
-                    1, kzzs[cidx].shape[1], kzzs[cidx].shape[2]
-                )
-                print(tmp)
-                exit()
-                led_num = led_idices[it * led_batch_size : (it + 1) * led_batch_size]
+                led_num = led_idices[
+                    cidx, it * led_batch_size : (it + 1) * led_batch_size
+                ]
                 dfmask = dfmask.unsqueeze(1).repeat(1, len(led_num), 1, 1)
                 spectrum_mask_ampli = Pupil0s[cidx].repeat(
                     len(dz), len(led_num), 1, 1
@@ -355,25 +361,24 @@ if __name__ == "__main__":
                 psnr = 10 * -torch.log10(mse_loss).item()
                 t.set_postfix(Loss=f"{loss.item():.4e}", PSNR=f"{psnr:.2f}")
                 optimizer.step()
-                spectrum_masks.append(spectrum_mask)
-                dfmasks.append(dfmask)
-            spectrum_masks = torch.stack(spectrum_masks)
-            dfmasks = torch.stack(dfmasks)
-            color_spectrum_masks.append(spectrum_masks)
-            color_dfmasks.append(dfmasks)
-        color_spectrum_masks = torch.stack(color_spectrum_masks)
-        color_dfmasks = torch.stack(color_dfmasks)
+        #         spectrum_masks.append(spectrum_mask)
+        #         dfmasks.append(dfmask)
+        #     spectrum_masks = torch.stack(spectrum_masks)
+        #     dfmasks = torch.stack(dfmasks)
+        #     color_spectrum_masks.append(spectrum_masks)
+        #     color_dfmasks.append(dfmasks)
+        # color_spectrum_masks = torch.stack(color_spectrum_masks)
+        # color_dfmasks = torch.stack(color_dfmasks)
 
-        d = {
-            "spectrum_mask": color_spectrum_masks,
-            "df_mask": color_dfmasks,
-            "Isum": Isums,
-            "Pupil0": Pupil0s,
-            "kzz": kzzs,
-            "ledpos_true": ledpos_trues,
-        }
-        torch.save(d, f"rgb_tensors.pth")
-        exit()
+        # d = {
+        #     "spectrum_mask": color_spectrum_masks,
+        #     "df_mask": color_dfmasks,
+        #     "Isum": Isums,
+        #     "Pupil0": Pupil0s,
+        #     "kzz": kzzs,
+        #     "ledpos_true": ledpos_trues,
+        # }
+        # torch.save(d, f"rgb_tensors.pth")
 
         scheduler.step()
 
@@ -404,5 +409,5 @@ if __name__ == "__main__":
 
             plt.savefig(f"{vis_dir}/e_{epoch}.png")
 
-    save_path = os.path.join("trained_models", sample + "_" + color + ".pth")
+    save_path = os.path.join("trained_models", sample + "_subsampled.pth")
     save_model_with_required_grad(model, save_path)
