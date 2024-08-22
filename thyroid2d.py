@@ -51,7 +51,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_feats", default=32, type=int)
     parser.add_argument("--num_modes", default=512, type=int)
     parser.add_argument("--c2f", default=False, action="store_true")
-    parser.add_argument("--fit_3D", default=True, action="store_true")
+    parser.add_argument("--fit_3D", default=False, action="store_true")
     parser.add_argument("--layer_norm", default=False, action="store_true")
     parser.add_argument("--amp", default=True, action="store_true")
     parser.add_argument("--sample", default="Thyroid", type=str)
@@ -84,9 +84,9 @@ if __name__ == "__main__":
 
     vis_dir = f"./vis/feat{num_feats}"
 
-    if fit_3D:
-        vis_dir += "_3D"
-        os.makedirs(f"{vis_dir}/vid", exist_ok=True)
+    # if fit_3D:
+    #     vis_dir += "_3D"
+    #     os.makedirs(f"{vis_dir}/vid", exist_ok=True)
     os.makedirs(vis_dir, exist_ok=True)
 
     # Load data
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     kzz = torch.from_numpy(kzz).to(device).unsqueeze(0)
     Isum = torch.from_numpy(Isum).to(device)
 
-    # Define depth of field of brightfield microscope for determine selected z-plane
+    # # Define depth of field of brightfield microscope for determine selected z-plane
     # DOF = (
     #     0.5 / NA**2  # + pixel_size / mag / NA
     # )  # wavelength is emphrically set as 0.5 um
@@ -243,9 +243,8 @@ if __name__ == "__main__":
     # # number of selected z-slices
     # num_z = int(np.ceil((z_max - z_min) / delta_z))
 
-    # bgr planes
     z_min = 0.0
-    z_max = 2.0
+    z_max = 1.0
 
     # Define LED Batch size
     led_batch_size = 1
@@ -281,15 +280,16 @@ if __name__ == "__main__":
         led_idices = list(np.arange(ID_len))  # list(np.random.permutation(ID_len)) #
         # _fill = len(led_idices) - (len(led_idices) % led_batch_size)
         # led_idices = led_idices + list(np.random.choice(led_idices, _fill, replace=False))
-        if fit_3D:
-            dzs = (
-                (torch.randperm(num_z - 1)[: num_z // 2] + torch.rand(num_z // 2))
-                * ((z_max - z_min) // (num_z - 1))
-            ).to(device) + z_min
-            if epoch % 2 == 0:
-                dzs = torch.linspace(z_min, z_max, num_z).to(device)
-        else:
-            dzs = torch.FloatTensor([5.0]).to(device)
+        # if fit_3D:
+        #     dzs = (
+        #         (torch.randperm(num_z - 1)[: num_z // 2] + torch.rand(num_z // 2))
+        #         * ((z_max - z_min) // (num_z - 1))
+        #     ).to(device) + z_min
+        #     if epoch % 2 == 0:
+        #         dzs = torch.linspace(z_min, z_max, num_z).to(device)
+        # else:
+        # dzs = torch.FloatTensor([5.0]).to(device)
+        dzs = torch.FloatTensor([0.0]).to(device)
 
         if use_c2f and c2f_sche[epoch] < model.ds_factor:
             model.init_scale_grids(ds_factor=c2f_sche[epoch])
@@ -381,21 +381,21 @@ if __name__ == "__main__":
 
             plt.savefig(f"{vis_dir}/e_{epoch}.png")
 
-        if fit_3D and (epoch % 5 == 0 or epoch + 1 == num_epochs) and epoch > 0:
-            dz = torch.linspace(z_min, z_max, 61).to(device).view(61)
-            with torch.no_grad():
-                out = []
-                for z in torch.chunk(dz, 32):
-                    img_ampli, img_phase = model(z)
-                    _img_complex = img_ampli * torch.exp(1j * img_phase)
-                    out.append(_img_complex)
-                img_complex = torch.cat(out, dim=0)
-            _imgs = img_complex.abs().cpu().detach().numpy()
-            # Save amplitude
-            imgs = (_imgs - _imgs.min()) / (_imgs.max() - _imgs.min())
-            imageio.mimsave(
-                f"{vis_dir}/vid/{epoch}.mp4", np.uint8(imgs * 255), fps=5, quality=8
-            )
+        # if fit_3D and (epoch % 5 == 0 or epoch + 1 == num_epochs) and epoch > 0:
+        #     dz = torch.linspace(z_min, z_max, 61).to(device).view(61)
+        #     with torch.no_grad():
+        #         out = []
+        #         for z in torch.chunk(dz, 32):
+        #             img_ampli, img_phase = model(z)
+        #             _img_complex = img_ampli * torch.exp(1j * img_phase)
+        #             out.append(_img_complex)
+        #         img_complex = torch.cat(out, dim=0)
+        #     _imgs = img_complex.abs().cpu().detach().numpy()
+        #     # Save amplitude
+        #     imgs = (_imgs - _imgs.min()) / (_imgs.max() - _imgs.min())
+        #     imageio.mimsave(
+        #         f"{vis_dir}/vid/{epoch}.mp4", np.uint8(imgs * 255), fps=5, quality=8
+        #     )
 
     save_path = os.path.join("trained_models", sample + "_" + color + ".pth")
     save_model_with_required_grad(model, save_path)

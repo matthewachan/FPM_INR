@@ -104,6 +104,7 @@ class G_Tensor3D(nn.Module):
         self.z_data = nn.Parameter(
             torch.randn((self.z_mode, self.num_feats)), requires_grad=True
         )
+        # TODO: z_min/z_max used for normalization. not needed
         self.z_min = z_min
         self.z_max = z_max
         self.z_dim = z_dim
@@ -122,39 +123,31 @@ class G_Tensor3D(nn.Module):
             requires_grad=False,
         )
 
-        if self.x0 is not None:
-            device = self.x0.device
-            self.x0.data = (indices[:, 0].clamp(min=0, max=x_max - 1)).to(device)
-            self.y0.data = indices[:, 1].clamp(min=0, max=y_max - 1).to(device)
-            self.x1.data = (self.x0 + 1).clamp(max=x_max - 1).to(device)
-            self.y1.data = (self.y0 + 1).clamp(max=y_max - 1).to(device)
-            self.lerp_weights.data = (xs - indices.float()).to(device)
-        else:
-            self.x0 = nn.Parameter(
-                indices[:, 0].clamp(min=0, max=x_max - 1),
-                requires_grad=False,
-            )
-            self.y0 = nn.Parameter(
-                indices[:, 1].clamp(min=0, max=y_max - 1),
-                requires_grad=False,
-            )
-            self.x1 = nn.Parameter(
-                (self.x0 + 1).clamp(max=x_max - 1), requires_grad=False
-            )
-            self.y1 = nn.Parameter(
-                (self.y0 + 1).clamp(max=y_max - 1), requires_grad=False
-            )
-            self.lerp_weights = nn.Parameter(xs - indices.float(), requires_grad=False)
+        self.x0 = nn.Parameter(
+            indices[:, 0].clamp(min=0, max=x_max - 1),
+            requires_grad=False,
+        )
+        self.y0 = nn.Parameter(
+            indices[:, 1].clamp(min=0, max=y_max - 1),
+            requires_grad=False,
+        )
+        self.x1 = nn.Parameter((self.x0 + 1).clamp(max=x_max - 1), requires_grad=False)
+        self.y1 = nn.Parameter((self.y0 + 1).clamp(max=y_max - 1), requires_grad=False)
+        self.lerp_weights = nn.Parameter(xs - indices.float(), requires_grad=False)
 
     def normalize_z(self, z):
         return (self.z_dim - 1) * (z - self.z_min) / (self.z_max - self.z_min)
 
     def sample(self, z):
-        z = self.normalize_z(z)
-        z0 = z.long().clamp(min=0, max=self.z_dim - 1)
-        z1 = (z0 + 1).clamp(max=self.z_dim - 1)
-        zlerp_weights = (z - z.long().float())[:, None]
+        z = z.long().clamp(min=0, max=2)
 
+        # TODO: Remove z-interpolation logic. We will have 3 distinct wavelengths instead of a continuous range.
+        # z = self.normalize_z(z)
+        # z0 = z.long().clamp(min=0, max=self.z_dim - 1)
+        # z1 = (z0 + 1).clamp(max=self.z_dim - 1)
+        # zlerp_weights = (z - z.long().float())[:, None]
+
+        # Bilinear interpolation?
         xy_feat = (
             self.data[self.y0, self.x0]
             * (1.0 - self.lerp_weights[:, 0:1])
@@ -169,13 +162,13 @@ class G_Tensor3D(nn.Module):
             * self.lerp_weights[:, 0:1]
             * self.lerp_weights[:, 1:2]
         )
-        z_feat = (
-            self.z_data[z0] * (1.0 - zlerp_weights) + self.z_data[z1] * zlerp_weights
-        )
+        z_feat = self.z_data[z]
+        # z_feat = (
+        #     self.z_data[z0] * (1.0 - zlerp_weights) + self.z_data[z1] * zlerp_weights
+        # )
         z_feat = z_feat[:, None].repeat(1, xy_feat.shape[0], 1)
 
         feat = xy_feat[None].repeat(z.shape[0], 1, 1) * z_feat
-        # feat = torch.cat([feat, self.xy_coords], -1)
 
         return feat
 
@@ -198,7 +191,7 @@ class FullModel(nn.Module):
         self.img_real = G_Tensor3D(
             x_mode=x_mode,
             y_mode=y_mode,
-            z_dim=5,
+            z_dim=3,
             z_min=z_min,
             z_max=z_max,
             num_feats=num_feats,
@@ -207,7 +200,7 @@ class FullModel(nn.Module):
         self.img_imag = G_Tensor3D(
             x_mode=x_mode,
             y_mode=y_mode,
-            z_dim=5,
+            z_dim=3,
             z_min=z_min,
             z_max=z_max,
             num_feats=num_feats,
@@ -215,17 +208,6 @@ class FullModel(nn.Module):
         )
         self.w, self.h = w, h
         self.init_scale_grids(ds_factor=ds_factor)
-
-        # In case we want to learn the pupil function
-        # self.Pupil0 = nn.Parameter(Pupil0, requires_grad=True)
-
-        # In case we want to learn the shift of each LED
-        # xF, yF = torch.meshgrid(torch.arange(-w // 2, w // 2), torch.arange(-h // 2, h // 2), indexing="ij")
-        # self.xF = nn.Parameter(xF, requires_grad=False)
-        # self.yF = nn.Parameter(yF, requires_grad=False)
-        # self.shift = nn.Parameter(
-        #    torch.zeros(n_views, 2), requires_grad=True
-        # )
 
     def init_scale_grids(self, ds_factor):
         self.img_real.create_coords(
@@ -242,18 +224,6 @@ class FullModel(nn.Module):
         )
         self.ds_factor = ds_factor
         self.us_module = nn.Upsample(scale_factor=ds_factor, mode="bilinear")
-
-    def get_shift_grid(self, led_num):
-        w = self.w
-        shift = self.shift[led_num].unsqueeze(1).unsqueeze(1)
-        grid = torch.exp(
-            -1j
-            * 2
-            * torch.pi
-            * (self.xF[None] * shift[..., 0] + self.yF[None] * shift[..., 1])
-            / w
-        )
-        return grid
 
     def forward(self, dz):
         img_real = self.img_real(dz)

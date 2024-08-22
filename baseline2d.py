@@ -51,16 +51,14 @@ if __name__ == "__main__":
     parser.add_argument("--num_feats", default=32, type=int)
     parser.add_argument("--num_modes", default=512, type=int)
     parser.add_argument("--c2f", default=False, action="store_true")
-    parser.add_argument("--fit_3D", default=True, action="store_true")
     parser.add_argument("--layer_norm", default=False, action="store_true")
     parser.add_argument("--amp", default=True, action="store_true")
-    parser.add_argument("--sample", default="Thyroid", type=str)
-    parser.add_argument("--color", default="g", type=str)
+    parser.add_argument("--sample", default="bloodsmear", type=str)
+    parser.add_argument("--color", default="r", type=str)
     parser.add_argument("--is_system", default="Linux", type=str)  # "Windows". "Linux"
 
     args = parser.parse_args()
 
-    fit_3D = args.fit_3D
     num_epochs = args.num_epochs
     num_feats = args.num_feats
     num_modes = args.num_modes
@@ -73,84 +71,67 @@ if __name__ == "__main__":
     color = args.color
     is_os = args.is_system
 
-    sample_list = ["Thyroid"]
-    color_list = ["r", "g", "b"]
-    if sample not in sample_list:
-        print("Error message: sample name is wrong.")
-        print("Avaliable sample names: ['Thyroid'] ")
-    if color not in color_list:
-        print("Error message: color name is wrong.")
-        print("Avaliable color names: ['r', 'g', 'b']")
-
     vis_dir = f"./vis/feat{num_feats}"
 
-    if fit_3D:
-        vis_dir += "_3D"
-        os.makedirs(f"{vis_dir}/vid", exist_ok=True)
     os.makedirs(vis_dir, exist_ok=True)
 
     # Load data
-    I = (
-        sio.loadmat(os.path.join("data", "Thyroid", "Thyroid_" + color + "_1024.mat"))[
-            "I"
-        ].astype("float32")
-        / 255
-    )
 
-    # Raw data central frame preview
-    plt.figure(dpi=200)
-    plt.imshow(I[:, :, 113], cmap="gray")
-    plt.title("Raw data central frame preview")
-    plt.savefig(f"{vis_dir}/raw_data.png")
+    data_struct = sio.loadmat(
+        "/nfshomes/mattchan/scratch/Fourier-Ptychography/Data/bloodsmear_blue.mat"
+    )
+    # MAGimg = 3
+    # if sample == "Siemens":
+    #     data_struct = sio.loadmat(f"data/{sample}/{sample}_{color}.mat")
+    #     MAGimg = 3
+
+    # else:
+    #     data_struct = mat73.loadmat(f"data/{sample}/{sample}_{color}.mat")
+    #     MAGimg = 2
+
+    I = data_struct["imlow_HDR"].astype("float32")
 
     # Select ROI
-    # I = I[0:512,0:512,:]
+    I = I[0 : int(num_modes), 0 : int(num_modes), :]  #######################
 
     # Raw measurement sidelength
     M = I.shape[0]
     N = I.shape[1]
-    # number of LEDs along each axis
-    ledM = 15
-    ledN = 15
+    ID_len = I.shape[2]
+
+    # NAx NAy
+    # NAs = data_struct["na_calib"].astype("float32")
+    # NAx = NAs[:, 0]
+    # NAy = NAs[:, 1]
+    illum = sio.loadmat("/nfshomes/mattchan/scratch/Fourier-Ptychography/na_illum.mat")
+    NAx = illum["kx"].astype("float32")[0]
+    NAy = illum["ky"].astype("float32")[0]
+
+    # LED central wavelength
+    if color == "r":
+        wavelength = 0.632  # um
+    elif color == "g":
+        wavelength = 0.5126  # um
+    elif color == "b":
+        wavelength = 0.475  # um
 
     # Distance between two adjacent LEDs (unit: um)
     D_led = 4000
-    # Distance from central LED to sample (unit: um)
-    h = 66000
-    # LED central wavelength
-    if color == "r":
-        wavelength = 0.617  # um
-    elif color == "g":
-        wavelength = 0.5226  # um
-    elif color == "b":
-        wavelength = 0.465  # um
-
     # free-space k-vector
     k0 = 2 * np.pi / wavelength
     # Objective lens magnification
-    mag = 20
+    mag = 2.0
     # Camera pixel pitch (unit: um)
-    pixel_size = 5.5
+    pixel_size = 1.845
     # pixel size at image plane (unit: um)
     D_pixel = pixel_size / mag
     # Objective lens NA
-    NA = 0.4
+    NA = 0.1
     # Maximum k-value
     kmax = NA * k0
-    # [x,y] image patch center shift with respect to the optical center (unit: pixel)
-    x = 0  # 450
-    y = 0  # -50
-    # shift in um
-    objdx = x * D_pixel
-    objdy = y * D_pixel
-
-    # Check Nyquist Sampling (Not needed here)
-    # Rcam = wavelength / NA * mag / 2 / pixel_size
-    # RLED = NA * np.sqrt(D_led ** 2 + h ** 2) / D_led
-    # Roverlap = 1 / np.pi * (2 * np.arccos(1 / 2 / RLED) - 1 / RLED * np.sqrt(1 - (1 / 2 / RLED) ** 2))
 
     # Calculate upsampliing ratio
-    MAGimg = 2
+    MAGimg = 4
     # Upsampled pixel count
     MM = int(M * MAGimg)
     NN = int(N * MAGimg)
@@ -159,57 +140,32 @@ if __name__ == "__main__":
     Fxx1, Fyy1 = np.meshgrid(np.arange(-NN / 2, NN / 2), np.arange(-MM / 2, MM / 2))
     Fxx1 = Fxx1[0, :] / (N * D_pixel) * (2 * np.pi)
     Fyy1 = Fyy1[:, 0] / (M * D_pixel) * (2 * np.pi)
-    # Center LED coordinate
-    lit_cenv = (ledM - 1) / 2
-    lit_cenh = (ledN - 1) / 2
-    # LED coordinate system
-    vled = np.arange(0, 2 * lit_cenv + 1) - lit_cenv
-    hled = np.arange(0, 2 * lit_cenh + 1) - lit_cenh
-    hhled, vvled = np.meshgrid(hled, vled)
 
     # Calculate illumination NA
-    u = (hhled * D_led + objdx) / np.sqrt(
-        (hhled * D_led + objdx) ** 2 + (vvled * D_led + objdy) ** 2 + h**2
-    )
-    v = (vvled * D_led + objdy) / np.sqrt(
-        (hhled * D_led + objdx) ** 2 + (vvled * D_led + objdy) ** 2 + h**2
-    )
+    u = -NAx
+    v = -NAy
     NAillu = np.sqrt(u**2 + v**2)
-
-    # Define LEDs to use
-    # IdxUseMask = NAillu <= NA # Synthetic_NA = NA + NA
-    IdxUseMask = np.sqrt((hhled) ** 2 + (vvled) ** 2) <= 7  # 145 LEDs used
-    ID_len = np.sum(IdxUseMask)
-
-    u_use, v_use = np.zeros((ID_len)), np.zeros((ID_len))
-    hhled_use, vvled_use = np.zeros((ID_len)), np.zeros((ID_len))
-    I_idx_use = np.zeros((ID_len)).astype("int")
-    Isum = np.zeros((M, N, ID_len))
-    count = 0
-    for i in range(ledM):
-        for j in range(ledN):
-            if IdxUseMask[i, j] != 0:
-                u_use[count], v_use[count] = u[i, j], v[i, j]
-                hhled_use[count], vvled_use[count] = hhled[i, j], vvled[i, j]
-                I_idx_use[count] = int(j + i * ledN)
-                count += 1
-    Isum = I[:, :, I_idx_use]
+    order = np.argsort(NAillu)
+    u = u[order]
+    v = v[order]
 
     # NA shift in pixel from different LED illuminations
     ledpos_true = np.zeros((ID_len, 2), dtype=int)
     count = 0
     for idx in range(ID_len):
-        Fx1_temp = np.abs(Fxx1 - k0 * u_use[idx])
+        Fx1_temp = np.abs(Fxx1 - k0 * u[idx])
         ledpos_true[count, 0] = np.argmin(Fx1_temp)
-        Fy1_temp = np.abs(Fyy1 - k0 * v_use[idx])
+        Fy1_temp = np.abs(Fyy1 - k0 * v[idx])
         ledpos_true[count, 1] = np.argmin(Fy1_temp)
         count += 1
-
     # Raw measurements
-    # Isum = I[:, :, order] / np.max(I)
+    Isum = I[:, :, order] / np.max(I)
 
     # Define angular spectrum
-    kxx, kyy = np.meshgrid(Fxx1[:M], Fxx1[:N])
+    if sample == "Siemens":
+        kxx, kyy = np.meshgrid(Fxx1[0, :M], Fxx1[0, :N])
+    else:
+        kxx, kyy = np.meshgrid(Fxx1[:M], Fxx1[:N])
     kxx, kyy = kxx - np.mean(kxx), kyy - np.mean(kyy)
     krr = np.sqrt(kxx**2 + kyy**2)
     mask_k = k0**2 - krr**2 > 0
@@ -231,21 +187,8 @@ if __name__ == "__main__":
     kzz = torch.from_numpy(kzz).to(device).unsqueeze(0)
     Isum = torch.from_numpy(Isum).to(device)
 
-    # Define depth of field of brightfield microscope for determine selected z-plane
-    # DOF = (
-    #     0.5 / NA**2  # + pixel_size / mag / NA
-    # )  # wavelength is emphrically set as 0.5 um
-    # # z-slice separation (emphirically set)
-    # delta_z = 1.6 * DOF
-    # # z-range
-    # z_max = 20.0
-    # z_min = -10.0
-    # # number of selected z-slices
-    # num_z = int(np.ceil((z_max - z_min) / delta_z))
-
-    # bgr planes
     z_min = 0.0
-    z_max = 2.0
+    z_max = 1.0
 
     # Define LED Batch size
     led_batch_size = 1
@@ -281,15 +224,7 @@ if __name__ == "__main__":
         led_idices = list(np.arange(ID_len))  # list(np.random.permutation(ID_len)) #
         # _fill = len(led_idices) - (len(led_idices) % led_batch_size)
         # led_idices = led_idices + list(np.random.choice(led_idices, _fill, replace=False))
-        if fit_3D:
-            dzs = (
-                (torch.randperm(num_z - 1)[: num_z // 2] + torch.rand(num_z // 2))
-                * ((z_max - z_min) // (num_z - 1))
-            ).to(device) + z_min
-            if epoch % 2 == 0:
-                dzs = torch.linspace(z_min, z_max, num_z).to(device)
-        else:
-            dzs = torch.FloatTensor([5.0]).to(device)
+        dzs = torch.FloatTensor([0.0]).to(device)
 
         if use_c2f and c2f_sche[epoch] < model.ds_factor:
             model.init_scale_grids(ds_factor=c2f_sche[epoch])
@@ -304,6 +239,7 @@ if __name__ == "__main__":
             else:
                 raise NotImplementedError
 
+        # TODO: Replace this and iterate over RGB wavelengths instead of defocus depth
         for dz in dzs:
             dz = dz.unsqueeze(0)
 
@@ -327,8 +263,10 @@ if __name__ == "__main__":
                 )
 
                 with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.bfloat16):
+                    # TODO: Change model input to wavelength
                     img_ampli, img_phase = model_fn(dz)
                     img_complex = img_ampli * torch.exp(1j * img_phase)
+                    # print("NN out shape", img_complex.shape)
                     uo, vo = ledpos_true[led_num, 0], ledpos_true[led_num, 1]
                     x_0, x_1 = vo - M // 2, vo + M // 2
                     y_0, y_1 = uo - N // 2, uo + N // 2
@@ -337,10 +275,13 @@ if __name__ == "__main__":
                     oI_cap = (
                         oI_cap.permute(2, 0, 1).unsqueeze(0).repeat(len(dz), 1, 1, 1)
                     )
+                    # print("measurement shape", oI_cap.shape)
 
                     oI_sub = get_sub_spectrum(
                         img_complex, led_num, x_0, y_0, x_1, y_1, spectrum_mask, MAGimg
                     )
+                    # print("propagated shape", oI_sub.shape)
+                    # exit()
 
                     l1_loss = F.smooth_l1_loss(oI_cap, oI_sub)
                     loss = l1_loss
@@ -380,22 +321,6 @@ if __name__ == "__main__":
             fig.colorbar(im, cax=cax, orientation="vertical")
 
             plt.savefig(f"{vis_dir}/e_{epoch}.png")
-
-        if fit_3D and (epoch % 5 == 0 or epoch + 1 == num_epochs) and epoch > 0:
-            dz = torch.linspace(z_min, z_max, 61).to(device).view(61)
-            with torch.no_grad():
-                out = []
-                for z in torch.chunk(dz, 32):
-                    img_ampli, img_phase = model(z)
-                    _img_complex = img_ampli * torch.exp(1j * img_phase)
-                    out.append(_img_complex)
-                img_complex = torch.cat(out, dim=0)
-            _imgs = img_complex.abs().cpu().detach().numpy()
-            # Save amplitude
-            imgs = (_imgs - _imgs.min()) / (_imgs.max() - _imgs.min())
-            imageio.mimsave(
-                f"{vis_dir}/vid/{epoch}.mp4", np.uint8(imgs * 255), fps=5, quality=8
-            )
 
     save_path = os.path.join("trained_models", sample + "_" + color + ".pth")
     save_model_with_required_grad(model, save_path)
